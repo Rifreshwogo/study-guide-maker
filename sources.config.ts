@@ -54,7 +54,13 @@ export interface Book {
    * sections (LibreTexts). `linkPrefix` limits which links count. Leave this out
    * if the site blocks automated downloads; the AI then opens `startUrl` itself.
    */
-  index?: { url: string; depth: 1 | 2; linkPrefix: string };
+  index?: {
+    url: string;
+    depth: 1 | 2;
+    linkPrefix: string;
+    /** Optional regex a top-level link must match (to skip broken or unrelated links). */
+    linkPattern?: string;
+  };
 }
 
 export interface ClassConfig {
@@ -95,10 +101,17 @@ export const BOOKS: Record<string, Book> = {
     freeUrl: "https://www.americanyawp.com/",
     status: "approved",
     isOpenStax: false,
-    startUrl: "https://www.americanyawp.com/",
+    startUrl: "https://www.americanyawp.com/text/",
     fetchHosts: ["www.americanyawp.com", "americanyawp.com"],
     urlPrefixes: ["https://www.americanyawp.com/", "https://americanyawp.com/"],
-    index: { url: "https://www.americanyawp.com/", depth: 1, linkPrefix: "https://www.americanyawp.com/text/" },
+    // The homepage only links "2e-..." chapter pages, which return 404. The working
+    // chapter list is at /text/ (pages named "/text/01-...").
+    index: {
+      url: "https://www.americanyawp.com/text/",
+      depth: 1,
+      linkPrefix: "https://www.americanyawp.com/text/",
+      linkPattern: "/text/\\d{2}-",
+    },
   },
   "personal-finance-coastline": {
     id: "personal-finance-coastline",

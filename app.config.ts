@@ -3,6 +3,7 @@ export const APP_CONFIG = {
   /** Claude model used to research and write guides. */
   model: "claude-sonnet-5-5",
 
+
   /** Longest study request a student can type. */
   maxTopicChars: 500,
 

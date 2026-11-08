@@ -13,7 +13,8 @@ type Phase =
   | { kind: "error"; message: string; request: GenerateRequest }
   | { kind: "done"; result: GuideResponse };
 
-const CLIENT_TIMEOUT_MS = 310_000;
+// Local mode can take several minutes; on Vercel the server stops at 300 s anyway.
+const CLIENT_TIMEOUT_MS = 900_000;
 
 async function requestGuide(request: GenerateRequest): Promise<GuideResponse> {
   const controller = new AbortController();

@@ -104,7 +104,10 @@ async function buildIndex(book: Book): Promise<SectionLink[]> {
   const idx = book.index!;
   const html = await fetchHtml(idx.url, idx.url);
   if (!html) return [];
-  const top = extractLinks(html, idx.url, idx.linkPrefix).filter((l) => !isBoilerplate(l.url));
+  const pattern = idx.linkPattern ? new RegExp(idx.linkPattern) : null;
+  const top = extractLinks(html, idx.url, idx.linkPrefix).filter(
+    (l) => !isBoilerplate(l.url) && (!pattern || pattern.test(l.url)),
+  );
 
   if (idx.depth === 1) return top.slice(0, MAX_LINKS);
 

@@ -262,7 +262,7 @@ async function compose(
 
 // ─── Whole pipeline ─────────────────────────────────────────────────────────
 
-function attribution(book: ReturnType<typeof approvedBooks>[number]): BookAttribution {
+export function attribution(book: ReturnType<typeof approvedBooks>[number]): BookAttribution {
   return {
     title: book.title,
     authors: book.authors,

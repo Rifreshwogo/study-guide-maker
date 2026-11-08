@@ -5,6 +5,9 @@ import { getClass } from "@/sources.config";
 import { GenerateRequestSchema, type NoteImage } from "@/lib/request";
 import { checkRateLimit, clientIp } from "@/lib/rateLimit";
 import { GenerationError, generateGuide } from "@/lib/generate";
+import { generateGuideLocal } from "@/lib/local/team";
+import { LocalModelError } from "@/lib/local/ollama";
+import { LOCAL_CONFIG } from "@/lib/local/config";
 import type { GuideErrorResponse, GuideResponse } from "@/lib/schema";
 
 export const runtime = "nodejs";
@@ -91,10 +94,21 @@ export async function POST(req: Request) {
 
   // 4. Generate. Photos stay in memory for this request only and are never saved.
   try {
-    const result = await generateGuide({ cls, topic, images, today: safeToday(today) });
+    const input = { cls, topic, images, today: safeToday(today) };
+    if (LOCAL_CONFIG.provider === "local" && process.env.VERCEL) {
+      // Vercel's servers can't reach a model on your Mac.
+      console.error("AI_PROVIDER=local is set on Vercel; remove it there");
+      return fail(500, "The app isn't set up correctly. Please try again later.");
+    }
+    const result =
+      LOCAL_CONFIG.provider === "local" ? await generateGuideLocal(input) : await generateGuide(input);
     return NextResponse.json<GuideResponse>(result);
   } catch (e) {
     // Log only error type/status: never the student's text or photos.
+    if (e instanceof LocalModelError) {
+      console.error("local model error:", e.message);
+      return fail(503, "The local AI model isn't responding. Make sure Ollama is running, then try again.");
+    }
     if (e instanceof GenerationError) {
       console.error("generation error:", e.message);
       return fail(e.status, e.userMessage);

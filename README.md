@@ -77,6 +77,45 @@ add an `index` entry like the LibreTexts books have. Without one, the AI opens t
 Before approving, re-check each book's license on its OpenStax page. The licenses in the config
 weren't checked against OpenStax's own pages.
 
+## Local mode (free, on your Mac only)
+
+Instead of Claude, the app can use a **team of local models** running on your Mac through
+[Ollama](https://ollama.com), with free local web search through
+[SearXNG](https://github.com/searxng/searxng). There's no per-guide cost, but guides
+take a few minutes and can be less accurate than Claude. **Local mode only works when you
+run the app yourself (`npm run dev`).** The live Vercel site keeps using Claude, because
+Vercel's servers can't reach your Mac.
+
+**The team** (`lib/local/team.ts`). Each member is the same local model with a different job:
+
+| Member | Job |
+|---|---|
+| Notes Reader | Turns note photos into text |
+| Researcher | Picks 1–3 textbook sections and writes web search queries (or declines off-topic requests) |
+| *(server)* | Downloads only allowed pages: approved-book sections, plus web results that pass the OpenStax checks before any model sees them |
+| Writer | Builds the guide JSON (validated, one retry) |
+| Checker | Re-solves the quiz without seeing the answers; where it disagrees, re-checks against the sources and fixes the answer and explanation |
+
+**Setup:**
+
+1. Install and open the Ollama app, then download the model (6.2 GB). Use the
+   "instruct" version: the plain `qwen3-vl:8b` is a "thinking" version that reasons at
+   length before every answer, which makes each step take minutes.
+   ```bash
+   ollama pull qwen3-vl:8b-instruct
+   ```
+2. Start local search (installed in `~/.local/searxng`) and leave it running:
+   ```bash
+   ~/.local/searxng/start.sh
+   ```
+3. In `.env.local`, add `AI_PROVIDER=local`, then restart `npm run dev`.
+
+To switch back to Claude, remove that line (or set `AI_PROVIDER=claude`) and restart.
+**Never set `AI_PROVIDER=local` on Vercel**; the app refuses to run that way there.
+
+Other settings are in `lib/local/config.ts` (model, context size, how many pages to read). `LOCAL_MODEL` in `.env.local` picks a different Ollama model; it must accept images, and
+should be an "instruct" (non-thinking) version or every step gets much slower.
+
 ## How a guide is made
 
 1. **Research** (`lib/generate.ts`, `lib/prompt.ts`). Claude reads the approved textbook
