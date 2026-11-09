@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { APP_CONFIG } from "@/app.config";
-import { CLASSES } from "@/sources.config";
+import { SUBJECT_SUGGESTIONS } from "@/sources.config";
 import { GenerateRequestSchema, type GenerateRequest } from "@/lib/request";
 import type { PreparedImage } from "@/lib/image";
 import PhotoPicker from "./PhotoPicker";
@@ -18,10 +18,10 @@ function localDate(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-type FieldErrors = Partial<Record<"classId" | "topic" | "images", string>>;
+type FieldErrors = Partial<Record<"subject" | "topic" | "images", string>>;
 
 export default function StudyForm({ onSubmit, disabled }: Props) {
-  const [classId, setClassId] = useState("");
+  const [subject, setSubject] = useState("");
   const [topic, setTopic] = useState("");
   const [images, setImages] = useState<PreparedImage[]>([]);
   const [photosBusy, setPhotosBusy] = useState(false);
@@ -35,7 +35,7 @@ export default function StudyForm({ onSubmit, disabled }: Props) {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const parsed = GenerateRequestSchema.safeParse({
-      classId,
+      subject,
       topic,
       today: localDate(),
       images: images.map(({ mediaType, data }) => ({ mediaType, data })),
@@ -58,31 +58,37 @@ export default function StudyForm({ onSubmit, disabled }: Props) {
   return (
     <form onSubmit={handleSubmit} noValidate className="space-y-6">
       <div className="space-y-2">
-        <label htmlFor="classId" className="block font-semibold">
-          1. Your class
+        <label htmlFor="subject" className="block font-semibold">
+          1. Your class or subject
         </label>
-        <select
-          id="classId"
-          value={classId}
+        <input
+          id="subject"
+          type="text"
+          list="subject-suggestions"
+          value={subject}
           onChange={(e) => {
-            setClassId(e.target.value);
-            setErrors((x) => ({ ...x, classId: undefined }));
+            setSubject(e.target.value.slice(0, 80));
+            setErrors((x) => ({ ...x, subject: undefined }));
           }}
           disabled={disabled}
-          aria-invalid={!!errors.classId}
-          aria-describedby={errors.classId ? "classId-error" : undefined}
+          autoComplete="off"
+          placeholder="e.g. AP Biology, Algebra 2, World History"
+          aria-invalid={!!errors.subject}
+          aria-describedby={errors.subject ? "subject-error" : "subject-help"}
           className="w-full rounded-lg border border-line bg-background px-3 py-3 text-base"
-        >
-          <option value="">Choose a class…</option>
-          {CLASSES.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
+        />
+        <datalist id="subject-suggestions">
+          {SUBJECT_SUGGESTIONS.map((s) => (
+            <option key={s} value={s} />
           ))}
-        </select>
-        {errors.classId && (
-          <p id="classId-error" className="text-sm text-red-600 dark:text-red-400">
-            {errors.classId}
+        </datalist>
+        {errors.subject ? (
+          <p id="subject-error" className="text-sm text-red-600 dark:text-red-400">
+            {errors.subject}
+          </p>
+        ) : (
+          <p id="subject-help" className="text-sm text-muted">
+            Any class works, including AP exams and finals.
           </p>
         )}
       </div>

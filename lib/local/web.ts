@@ -36,11 +36,22 @@ export function isPublicWebUrl(raw: string): boolean {
   return true;
 }
 
-/** Safe to show the local team: public, not OpenStax, not a mirror, not a pending book. */
+/**
+ * Sites that make poor study sources: videos and social media (little readable text),
+ * Q&A forums, and homework-answer sites.
+ */
+const LOW_VALUE_HOSTS = [
+  "youtube.com", "youtu.be", "tiktok.com", "instagram.com", "facebook.com", "x.com", "twitter.com",
+  "pinterest.com", "reddit.com", "quora.com", "chegg.com", "brainly.com", "coursehero.com",
+  "studocu.com", "quizlet.com", "scribd.com", "slideshare.net",
+];
+const isLowValue = (host: string) => LOW_VALUE_HOSTS.some((d) => host === d || host.endsWith("." + d));
+
+/** Safe to show the local team: public, a decent source, not OpenStax, not a mirror, not a pending book. */
 export function allowedForLocal(url: string): boolean {
   if (!isPublicWebUrl(url)) return false;
   const host = new URL(url).hostname.toLowerCase();
-  return !isBlockedUrl(url) && !isMirrorHost(host);
+  return !isBlockedUrl(url) && !isMirrorHost(host) && !isLowValue(host);
 }
 
 export async function searchWeb(query: string): Promise<{ title: string; url: string; snippet: string }[]> {

@@ -7,9 +7,10 @@ import { StudyGuideSchema, type GuideResponse, type StudyGuide } from "@/lib/sch
 import { AUDIENCE_RULES, COPYRIGHT_RULES, NO_OTHER_OPENSTAX, composeSystemPrompt, composeUserText } from "@/lib/prompt";
 import { getSectionLinks, type SectionLink } from "@/lib/bookIndex";
 import { filterWebSources, matchesPrefix } from "@/lib/sourceCheck";
-import { GenerationError, attribution } from "@/lib/generate";
+import { GenerationError, attribution } from "@/lib/errors";
 import { chat, chatJson } from "./ollama";
 import { readPage, searchWeb, type WebPage } from "./web";
+import { guideEnded, guideStarted, markEnd, markStart } from "./status";
 
 /**
  * The local team. Each member is the same local model with a different job:
@@ -112,6 +113,25 @@ function sourceRank(url: string, cls: ClassConfig): number {
 }
 
 async function gather(
+  cls: ClassConfig,
+  plan: z.infer<typeof PlanSchema>,
+  sections: NumberedSection[],
+): Promise<{ bookPages: { page: WebPage; book: Book }[]; webPages: WebPage[] }> {
+  markStart("librarian", "Downloading textbook sections and web pages");
+  try {
+    const result = await gatherInner(cls, plan, sections);
+    markEnd(
+      "librarian",
+      `read ${result.bookPages.length} textbook section${result.bookPages.length === 1 ? "" : "s"} and ${result.webPages.length} web page${result.webPages.length === 1 ? "" : "s"}`,
+    );
+    return result;
+  } catch (e) {
+    markEnd("librarian", "stopped with an error");
+    throw e;
+  }
+}
+
+async function gatherInner(
   cls: ClassConfig,
   plan: z.infer<typeof PlanSchema>,
   sections: NumberedSection[],
@@ -301,6 +321,23 @@ function tidyQuiz(quiz: StudyGuide["quiz"]): StudyGuide["quiz"] {
 // ─── Whole pipeline ─────────────────────────────────────────────────────────
 
 export async function generateGuideLocal(args: {
+  cls: ClassConfig;
+  topic: string;
+  images: NoteImage[];
+  today: string;
+}): Promise<GuideResponse> {
+  guideStarted(args.cls.name);
+  try {
+    const result = await runTeam(args);
+    guideEnded(true);
+    return result;
+  } catch (e) {
+    guideEnded(false, e instanceof GenerationError ? e.userMessage : "something went wrong");
+    throw e;
+  }
+}
+
+async function runTeam(args: {
   cls: ClassConfig;
   topic: string;
   images: NoteImage[];

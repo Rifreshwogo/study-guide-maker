@@ -1,5 +1,6 @@
 import "server-only";
 import { LOCAL_CONFIG } from "./config";
+import { markEnd, markStart, memberForAgent } from "./status";
 
 /**
  * Minimal client for Ollama's /api/chat endpoint (running on this Mac).
@@ -15,7 +16,19 @@ export interface LocalMessage {
 
 export class LocalModelError extends Error {}
 
-export async function chat(args: {
+/** chat() that also shows the matching team member as "working" on the dashboard. */
+export async function chat(args: Parameters<typeof chatRaw>[0]): Promise<string> {
+  const who = memberForAgent(args.agent);
+  if (!who) return chatRaw(args);
+  markStart(who.id, who.task);
+  try {
+    return await chatRaw(args);
+  } finally {
+    markEnd(who.id);
+  }
+}
+
+async function chatRaw(args: {
   agent: string;
   messages: LocalMessage[];
   format?: object;

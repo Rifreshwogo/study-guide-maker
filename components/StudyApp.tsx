@@ -2,52 +2,65 @@
 
 import { useState } from "react";
 import type { GenerateRequest } from "@/lib/request";
-import type { GuideErrorResponse, GuideResponse } from "@/lib/schema";
+import type { GuideErrorResponse, GuideResponse, JobResponse, QueuedResponse } from "@/lib/schema";
 import StudyForm from "./StudyForm";
 import LoadingState from "./LoadingState";
 import StudyGuide from "./StudyGuide";
 
 type Phase =
   | { kind: "form" }
-  | { kind: "loading" }
+  | { kind: "loading"; progress: JobResponse | null }
   | { kind: "error"; message: string; request: GenerateRequest }
   | { kind: "done"; result: GuideResponse };
 
-// Local mode can take several minutes; on Vercel the server stops at 300 s anyway.
-const CLIENT_TIMEOUT_MS = 900_000;
+const POLL_MS = 2500;
+const GIVE_UP_MS = 45 * 60 * 1000;
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function requestGuide(request: GenerateRequest): Promise<GuideResponse> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), CLIENT_TIMEOUT_MS);
+async function readError(res: Response, fallback: string): Promise<string> {
+  const data = (await res.json().catch(() => null)) as GuideErrorResponse | null;
+  if (data?.error) return data.error;
+  return res.status === 413 ? "Those photos are too large. Try fewer photos." : fallback;
+}
+
+/** Gets in line, then checks in every few seconds until the guide is ready. */
+async function requestGuide(request: GenerateRequest, onProgress: (p: JobResponse) => void): Promise<GuideResponse> {
+  let jobId: string;
   try {
     const res = await fetch("/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(request),
-      signal: controller.signal,
     });
-    const data = (await res.json().catch(() => null)) as GuideResponse | GuideErrorResponse | null;
-    if (!res.ok || !data || "error" in data) {
-      throw new Error(
-        data && "error" in data
-          ? data.error
-          : res.status === 413
-            ? "Those photos are too large. Try fewer photos."
-            : "Something went wrong making your guide. Please try again.",
-      );
-    }
-    return data;
+    if (!res.ok) throw new Error(await readError(res, "Something went wrong. Please try again."));
+    const ticket = (await res.json()) as QueuedResponse;
+    jobId = ticket.jobId;
+    onProgress(ticket.position > 0 ? { status: "queued", position: ticket.position } : { status: "running", elapsed: 0 });
   } catch (e) {
-    if (e instanceof DOMException && e.name === "AbortError") {
-      throw new Error("That took too long. Please try again, maybe with a narrower topic.");
-    }
-    if (e instanceof TypeError) {
-      throw new Error("Couldn't reach the server. Check your internet connection and try again.");
-    }
+    if (e instanceof TypeError) throw new Error("Couldn't reach the study guide server. It may be offline right now. Please try again later.");
     throw e;
-  } finally {
-    clearTimeout(timer);
   }
+
+  const started = Date.now();
+  let misses = 0;
+  while (Date.now() - started < GIVE_UP_MS) {
+    await wait(POLL_MS);
+    let res: Response;
+    try {
+      res = await fetch(`/api/jobs/${jobId}`, { cache: "no-store" });
+    } catch {
+      // A brief connection hiccup: keep trying for a little while.
+      if (++misses > 12) throw new Error("Lost the connection to the study guide server. Please try again.");
+      continue;
+    }
+    misses = 0;
+    if (!res.ok) throw new Error(await readError(res, "Something went wrong making your guide. Please try again."));
+    const job = (await res.json()) as JobResponse;
+    if (job.status === "done" && job.result) return job.result;
+    if (job.status === "error") throw new Error(job.error ?? "Something went wrong making your guide. Please try again.");
+    onProgress(job);
+  }
+  throw new Error("That took too long. Please try again, maybe with a narrower topic.");
 }
 
 export default function StudyApp() {
@@ -56,10 +69,10 @@ export default function StudyApp() {
   const [formKey, setFormKey] = useState(0);
 
   async function submit(request: GenerateRequest) {
-    setPhase({ kind: "loading" });
+    setPhase({ kind: "loading", progress: null });
     window.scrollTo({ top: 0 });
     try {
-      const result = await requestGuide(request);
+      const result = await requestGuide(request, (progress) => setPhase({ kind: "loading", progress }));
       setPhase({ kind: "done", result });
     } catch (e) {
       setPhase({
@@ -75,7 +88,7 @@ export default function StudyApp() {
   // It's only reset (new key) by "Make another guide".
   return (
     <>
-      {phase.kind === "loading" && <LoadingState />}
+      {phase.kind === "loading" && <LoadingState progress={phase.progress} />}
 
       {phase.kind === "error" && (
         <div role="alert" className="py-12 space-y-5 text-center">
@@ -115,7 +128,7 @@ export default function StudyApp() {
         <div className="space-y-1">
           <h1 className="text-2xl font-bold">Make a study guide</h1>
           <p className="text-muted">
-            Get key terms, flashcards, a practice quiz, and a study plan in about a minute.
+            Get key terms, flashcards, a practice quiz, and a study plan, made for you in a few minutes.
           </p>
         </div>
         <StudyForm key={formKey} onSubmit={submit} />

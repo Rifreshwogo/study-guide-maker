@@ -1,13 +1,10 @@
 import { z } from "zod";
 import { APP_CONFIG } from "@/app.config";
-import { CLASSES } from "@/sources.config";
 
 /**
  * The request the browser sends to /api/generate. The same rules run in the
  * browser (for friendly messages) and on the server (as the real check).
  */
-
-const classIds = CLASSES.map((c) => c.id) as [string, ...string[]];
 
 /** Base64 text is about 4/3 the size of the bytes it holds. */
 const maxBase64Chars = Math.ceil((APP_CONFIG.maxImageBytes * 4) / 3) + 4;
@@ -21,7 +18,11 @@ export const NoteImageSchema = z.object({
 });
 
 export const GenerateRequestSchema = z.object({
-  classId: z.enum(classIds, { error: "Please pick your class." }),
+  subject: z
+    .string()
+    .trim()
+    .min(2, "Tell us the class or subject, like “AP Biology” or “Algebra 2”.")
+    .max(80, "Please keep the class or subject under 80 characters."),
   topic: z
     .string()
     .trim()

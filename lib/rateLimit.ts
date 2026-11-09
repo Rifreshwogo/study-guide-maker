@@ -7,8 +7,7 @@ import { APP_CONFIG } from "@/app.config";
  *
  * With UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN set, counts are kept
  * in Upstash Redis and shared by every Vercel server. Without them, counts are
- * kept in this server's memory. That's fine locally, but on Vercel each server
- * instance counts separately, so set up Upstash before going live.
+ * kept in this server's memory, which is right when one Mac runs the whole site.
  *
  * IP addresses are hashed before storage; raw IPs are never stored.
  */
@@ -99,9 +98,14 @@ export async function checkRateLimit(ip: string): Promise<LimitResult> {
   return { ok: true };
 }
 
-/** The visitor's IP, as reported by Vercel (or "local" in development). */
+/**
+ * The visitor's IP. Behind Cloudflare Tunnel, Cloudflare sets cf-connecting-ip to the
+ * real visitor. That header can be trusted only because the app listens on
+ * 127.0.0.1, so the tunnel (or this Mac itself) is the only way in.
+ */
 export function clientIp(headers: Headers): string {
-  // On Vercel, x-forwarded-for is set by the platform; the first entry is the client.
+  const cf = headers.get("cf-connecting-ip");
+  if (cf) return cf.trim();
   const fwd = headers.get("x-forwarded-for");
   if (fwd) return fwd.split(",")[0].trim();
   return headers.get("x-real-ip") ?? "local";

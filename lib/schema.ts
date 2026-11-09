@@ -85,7 +85,24 @@ export interface GuideResponse {
   books: BookAttribution[];
 }
 
-/** What the API route sends when something goes wrong. */
+/** What /api/generate sends back: a ticket for the waiting line. */
+export interface QueuedResponse {
+  jobId: string;
+  /** Place in line (0 = already being made). */
+  position: number;
+}
+
+/** What /api/jobs/<id> sends back. */
+export interface JobResponse {
+  status: "queued" | "running" | "done" | "error";
+  position?: number;
+  elapsed?: number;
+  team?: { role: string; working: boolean; task: string | null; done: boolean }[];
+  result?: GuideResponse;
+  error?: string;
+}
+
+/** What the API routes send when something goes wrong. */
 export interface GuideErrorResponse {
   error: string;
 }

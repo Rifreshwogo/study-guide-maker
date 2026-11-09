@@ -74,6 +74,8 @@ export interface ClassConfig {
   researchNotes?: string;
   /** Sites to prefer in web research (a hint in the prompt, not a hard filter). */
   preferredSites: string[];
+  /** Words in a student's "class or subject" that mean this class (lowercase). */
+  aliases?: string[];
 }
 
 // ─── Licenses ────────────────────────────────────────────────────────────────
@@ -284,6 +286,7 @@ export const BOOKS: Record<string, Book> = {
 export const CLASSES: ClassConfig[] = [
   {
     id: "ib-history-americas",
+    aliases: ["us history", "u.s. history", "american history", "apush", "history of the americas", "american revolution", "civil war"],
     name: "IB HL History of the Americas",
     bookIds: ["american-yawp"],
     knownGaps:
@@ -293,18 +296,21 @@ export const CLASSES: ClassConfig[] = [
   },
   {
     id: "personal-finance",
+    aliases: ["personal finance", "financial literacy", "money management", "budgeting"],
     name: "Personal Finance",
     bookIds: ["personal-finance-coastline", "personal-finance-tulsa"],
     preferredSites: ["consumerfinance.gov", "investor.gov", "irs.gov", "fdic.gov", "khanacademy.org"],
   },
   {
     id: "ib-government",
+    aliases: ["comparative government", "comparative politics", "ib government", "ib global politics", "political science"],
     name: "IB Government",
     bookIds: ["comparative-government", "openstax-political-science"],
     preferredSites: ["ibo.org", "congress.gov", "usa.gov", "khanacademy.org"],
   },
   {
     id: "ib-english-hl",
+    aliases: ["ib english", "english literature", "literature", "lit analysis"],
     name: "IB HL English",
     bookIds: ["writing-through-literature", "project-gutenberg"],
     researchNotes:
@@ -314,22 +320,25 @@ export const CLASSES: ClassConfig[] = [
   },
   {
     id: "honors-anatomy",
+    aliases: ["anatomy", "physiology", "a&p", "a & p"],
     name: "Honors Anatomy & Physiology",
     bookIds: ["openstax-anatomy-2e"],
     preferredSites: ["ncbi.nlm.nih.gov", "nih.gov", "medlineplus.gov", "cancer.gov", "khanacademy.org"],
   },
   {
     id: "ap-calculus-ab",
+    aliases: ["calculus", "calc ab", "calc bc", "ap calc"],
     name: "AP Calculus AB",
     bookIds: ["openstax-calculus-1"],
     researchNotes:
-      "Align topics, unit names, and skills to the College Board's public AP Calculus AB " +
-      "Course and Exam Description. Make one of your searches find it on " +
+      "If this is AP Calculus, align topics, unit names, and skills to the College Board's public " +
+      "Course and Exam Description for that course. Make one of your searches find it on " +
       "apcentral.collegeboard.org so the guide can name the matching unit and topic.",
     preferredSites: ["apcentral.collegeboard.org", "collegeboard.org", "khanacademy.org", "tutorial.math.lamar.edu", "math.mit.edu"],
   },
   {
     id: "sociology-anthropology",
+    aliases: ["sociology", "anthropology"],
     name: "Sociology / Anthropology",
     bookIds: ["openstax-sociology-3e", "openstax-anthropology"],
     preferredSites: ["asanet.org", "americananthro.org", "census.gov", "pewresearch.org", "khanacademy.org"],
@@ -369,6 +378,35 @@ export const OPENSTAX_URL_MARKERS = ["openstax", "cnx.org"];
 export function getClass(id: string): ClassConfig | undefined {
   return CLASSES.find((c) => c.id === id);
 }
+
+/** Good general sources for any subject. */
+const GENERAL_SITES = ["khanacademy.org", "britannica.com", ".edu sites", ".gov sites", "apcentral.collegeboard.org"];
+
+/**
+ * Students can study any subject. If what they typed matches a class above
+ * (by name or alias), the team uses that class's approved books and sources;
+ * otherwise it researches the open web.
+ */
+export function classForSubject(subject: string): ClassConfig {
+  const typed = subject.trim().replace(/\s+/g, " ").slice(0, 80);
+  const s = typed.toLowerCase();
+  const hit = CLASSES.find((c) => [c.name, ...(c.aliases ?? [])].some((a) => s.includes(a.toLowerCase())));
+  const isAP = /\bap\b/i.test(typed);
+  const apNote = isAP
+    ? "This is an AP course: align topics, unit names, and skills to the College Board's public " +
+      "Course and Exam Description for it (apcentral.collegeboard.org)."
+    : undefined;
+  if (hit) return { ...hit, name: typed, researchNotes: [hit.researchNotes, apNote].filter(Boolean).join(" ") || undefined };
+  return { id: "general", name: typed, bookIds: [], preferredSites: GENERAL_SITES, researchNotes: apNote };
+}
+
+/** Suggestions for the subject box. */
+export const SUBJECT_SUGGESTIONS = [
+  ...CLASSES.map((c) => c.name),
+  "AP Biology", "AP Chemistry", "AP Physics 1", "AP US History", "AP World History", "AP Psychology",
+  "AP Statistics", "AP English Language", "AP Environmental Science", "Algebra 2", "Geometry",
+  "Chemistry", "Biology", "Spanish", "Economics",
+];
 
 export function booksForClass(cls: ClassConfig): Book[] {
   return cls.bookIds.map((id) => {

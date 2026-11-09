@@ -1,56 +1,78 @@
 # Study Guide Maker
 
-A free web app for high school students. A student picks their class, types what they're
-studying, and can add up to 5 photos of their class notes. Claude then builds an
-interactive study guide: key terms with high-yield flags, flashcards, a practice quiz with
-explanations, a study plan, common traps, and a list of every source used.
+A free website where any student types a class or subject and what they're studying,
+optionally adds photos of their notes, and gets an interactive study guide: key terms with
+high-yield flags, flashcards, a practice quiz with explanations, a study plan, common traps,
+and a list of every source used.
 
-Built with Next.js (App Router), TypeScript, Tailwind, and the Anthropic API. No accounts
-and no database.
+**Everything runs on local AI models on one Mac.** There's no cloud AI and no API bill. The
+Mac is the website's server, and Cloudflare Tunnel gives it a public address.
 
-> ## ⚠️ This app must stay free
+> ## ⚠️ This site must stay free
 >
 > Most of the textbooks are licensed **NonCommercial** (CC BY-NC / CC BY-NC-SA), and
 > OpenStax content may only be used in AI products with OpenStax's permission.
-> **Charging money for this app** (subscriptions, paid tiers, paywalled features) **would
-> require removing every NonCommercial source and every OpenStax source first.** The only
-> book here that allows commercial use is *The American Yawp* (CC BY-SA 4.0).
-> Public-domain Project Gutenberg texts are also fine.
+> **Charging money for this site** would require removing every NonCommercial source and
+> every OpenStax source first. The only book here that allows commercial use is
+> *The American Yawp* (CC BY-SA 4.0). Public-domain Project Gutenberg texts are also fine.
 
 ---
 
-## Run it locally
+## How it works
 
-You need [Node.js](https://nodejs.org) 20 or newer.
+1. A student enters **any class or subject** (e.g. "AP Biology", "Algebra 2") and a topic.
+   If the subject matches a class in `sources.config.ts` (by name or `aliases`), the team
+   uses that class's approved textbook; otherwise it researches the web. "AP" subjects are
+   aligned to the College Board's public course descriptions.
+2. The request **gets in line** (`lib/jobs.ts`). The Mac makes one guide at a time (about
+   5–8 minutes each); the page shows the student's place in line, then each team member's
+   progress. At most 8 can wait; requests and photos are kept in memory only.
+3. The **local team** (`lib/local/team.ts`), all running `qwen3-vl:8b-instruct` on Ollama:
 
-```bash
-npm install
-```
+| Member | Job |
+|---|---|
+| Notes Reader | Turns note photos into text |
+| Researcher | Picks 1–3 textbook sections and writes web searches (or declines off-topic requests) |
+| Librarian *(code, not a model)* | Downloads only allowed pages: approved-book sections, plus web results that pass the OpenStax and source-quality checks before any model sees them |
+| Writer | Builds the guide JSON (validated, one retry) |
+| Checker | Re-solves the quiz without seeing the answers; fixes answers that disagree |
 
-```bash
-cp .env.example .env.local
-```
+Web search runs on **SearXNG**, a private search engine on the Mac (safe search on strict).
+Video, social, Q&A, and homework-answer sites are skipped.
 
-Open `.env.local` and paste your Anthropic API key (see below), then:
+## Run it
 
-```bash
-npm run dev
-```
+You need [Node.js](https://nodejs.org) 20+, the [Ollama](https://ollama.com) app, and
+SearXNG (installed in `~/.local/searxng`).
 
-Open http://localhost:3000. To try it on your phone, open the "Network" address that
-`npm run dev` prints, while your phone is on the same Wi-Fi.
+1. Download the model once (6.2 GB):
+   ```bash
+   ollama pull qwen3-vl:8b-instruct
+   ```
+2. Install packages once:
+   ```bash
+   npm install
+   ```
+3. Start local search and leave it running:
+   ```bash
+   ~/.local/searxng/start.sh
+   ```
+4. Build and start the site (it listens only on this Mac):
+   ```bash
+   npm run build
+   ```
+   ```bash
+   npx next start -p 3000 -H 127.0.0.1
+   ```
+5. Put it online with a free temporary address (it changes every time this restarts):
+   ```bash
+   ~/.local/bin/cloudflared tunnel --no-autoupdate --url http://127.0.0.1:3000
+   ```
+   The address it prints (`https://….trycloudflare.com`) is the site. For a permanent
+   address, buy a domain and set up a *named* Cloudflare Tunnel.
 
-## Add your API key
-
-1. Get a key at [console.anthropic.com](https://console.anthropic.com) → **API Keys**.
-2. In `.env.local`, set `ANTHROPIC_API_KEY=sk-ant-...` (no quotes or spaces).
-3. Restart `npm run dev` so it picks up the change.
-
-The key is only read by the server (`lib/generate.ts`). It is never sent to the browser,
-and `.env.local` is excluded from git.
-
-**Tip:** In the Anthropic Console, set a monthly spend limit under **Settings → Limits** so
-the bill can never pass an amount you choose.
+**The site is only up while the Mac is on and awake** with Ollama, SearXNG, the site, and
+the tunnel running. Keep it plugged in and stop it from sleeping while the site is live.
 
 ## Turn on an OpenStax book (pending → approved)
 
@@ -58,113 +80,33 @@ All class and book settings live in [`sources.config.ts`](sources.config.ts).
 
 1. Find the book in `BOOKS` (for example `"openstax-anatomy-2e"`).
 2. Change `status: "pending"` to `status: "approved"`.
-3. Restart the app (or redeploy on Vercel).
+3. Rebuild and restart the site.
 
-That's all. From then on, the app:
+From then on, the Librarian may read that book's pages, and guides that use it show
+OpenStax's attribution. Web search keeps skipping OpenStax and its copies in every case.
+Re-check each book's license on its OpenStax page before approving.
 
-- lets the AI fetch that book's pages (limited to that book's own URLs),
-- stops treating that book as off-limits in source checks, and
-- shows OpenStax's attribution and link on every guide that uses it.
+## Add a class with its own textbook
 
-Web *search* keeps blocking openstax.org and known copies of OpenStax books in every class,
-because OpenStax's AI restriction covers all of its books. Approved OpenStax books are read
-by fetching their pages directly, which is the path the app checks and controls.
-
-Optional: to give an approved OpenStax book a chapter list (cheaper and more precise),
-add an `index` entry like the LibreTexts books have. Without one, the AI opens the book's
-`startUrl` itself.
-
-Before approving, re-check each book's license on its OpenStax page. The licenses in the config
-weren't checked against OpenStax's own pages.
-
-## Local mode (free, on your Mac only)
-
-Instead of Claude, the app can use a **team of local models** running on your Mac through
-[Ollama](https://ollama.com), with free local web search through
-[SearXNG](https://github.com/searxng/searxng). There's no per-guide cost, but guides
-take a few minutes and can be less accurate than Claude. **Local mode only works when you
-run the app yourself (`npm run dev`).** The live Vercel site keeps using Claude, because
-Vercel's servers can't reach your Mac.
-
-**The team** (`lib/local/team.ts`). Each member is the same local model with a different job:
-
-| Member | Job |
-|---|---|
-| Notes Reader | Turns note photos into text |
-| Researcher | Picks 1–3 textbook sections and writes web search queries (or declines off-topic requests) |
-| *(server)* | Downloads only allowed pages: approved-book sections, plus web results that pass the OpenStax checks before any model sees them |
-| Writer | Builds the guide JSON (validated, one retry) |
-| Checker | Re-solves the quiz without seeing the answers; where it disagrees, re-checks against the sources and fixes the answer and explanation |
-
-**Setup:**
-
-1. Install and open the Ollama app, then download the model (6.2 GB). Use the
-   "instruct" version: the plain `qwen3-vl:8b` is a "thinking" version that reasons at
-   length before every answer, which makes each step take minutes.
-   ```bash
-   ollama pull qwen3-vl:8b-instruct
-   ```
-2. Start local search (installed in `~/.local/searxng`) and leave it running:
-   ```bash
-   ~/.local/searxng/start.sh
-   ```
-3. In `.env.local`, add `AI_PROVIDER=local`, then restart `npm run dev`.
-
-To switch back to Claude, remove that line (or set `AI_PROVIDER=claude`) and restart.
-**Never set `AI_PROVIDER=local` on Vercel**; the app refuses to run that way there.
-
-Other settings are in `lib/local/config.ts` (model, context size, how many pages to read). `LOCAL_MODEL` in `.env.local` picks a different Ollama model; it must accept images, and
-should be an "instruct" (non-thinking) version or every step gets much slower.
-
-## How a guide is made
-
-1. **Research** (`lib/generate.ts`, `lib/prompt.ts`). Claude reads the approved textbook
-   for the class and opens only the 1–3 sections that match the request. Then it uses web
-   search to fill gaps, preferring .edu and .gov sites, College Board, IB, and Khan
-   Academy. Note photos come first, since they show what the teacher covered.
-   - Before the AI runs, the server downloads each book's chapter list (`lib/bookIndex.ts`).
-     This costs nothing and is cached for a day.
-   - Web search always blocks OpenStax and its mirrors (`OPENSTAX_MIRROR_DOMAINS`).
-2. **Source check** (`lib/sourceCheck.ts`). The server checks every URL the AI searched or
-   fetched. If it finds a pending book, an OpenStax copy, or a page outside the approved
-   books, it throws the research away and redoes it once with those sites blocked. If that
-   fails too, the student sees a friendly error.
-3. **Writing.** A second call turns the notes into JSON that follows a schema
-   (`lib/schema.ts`). The server validates it and retries once if it's malformed.
-4. **Sources.** The server writes book attribution from the config, based on which pages
-   were actually used. Any website the AI lists without having visited it is dropped.
-
-Uploaded photos stay in memory for that one request and are never saved. In the browser,
-each photo is resized and saved as a new JPEG before upload, which also removes hidden
-photo data such as GPS location.
+Add a book to `BOOKS` and a class to `CLASSES` in `sources.config.ts`, with `aliases` for the
+ways students might type it. Any other subject already works through web research.
 
 ## Settings
 
-[`app.config.ts`](app.config.ts) holds the model (`claude-sonnet-5-5`), input limits,
-photo limits, rate limits, and web research limits.
+- [`app.config.ts`](app.config.ts): input limits, photo limits, and rate limits (5 guides
+  per visitor per hour, 100 per day for the whole site).
+- [`lib/local/config.ts`](lib/local/config.ts): the model, context size, and how many pages
+  the team reads. `.env.local` can override `LOCAL_MODEL`, `OLLAMA_URL`, `SEARXNG_URL`.
 
-| Setting | Default | What it does |
-|---|---|---|
-| `rateLimitPerHour` | 5 | Guides per IP address per hour |
-| `globalDailyLimit` | 100 | Guides per day for the whole app (protects your bill) |
-| `maxWebSearches` / `maxWebFetches` | 3 / 4 | Web research per guide |
-| `maxTopicChars` | 500 | Length of the study request |
-| `maxImages` / `maxImageBytes` | 5 / 600 KB | Note photos (Vercel rejects requests over 4.5 MB) |
+## Team Office
 
-**Cost:** about $0.10–0.20 per guide in testing. The server log prints token counts for
-each step (never student content), so you can track cost in Vercel's logs.
+The team writes what it's doing to `~/.study-team/status.json` (steps and timing only, never
+what a student typed). The separate `team-office` project reads it to show the team at work.
 
-## Deploy to Vercel
+## The old Vercel deployment
 
-1. Push this folder to a GitHub repository and import it in Vercel.
-2. In **Project → Settings → Environment Variables**, add `ANTHROPIC_API_KEY`.
-3. **Set up rate limiting that works across servers** (recommended). Vercel runs the app
-   on many short-lived servers, so a limit kept in memory alone is easy to get around.
-   Create a free [Upstash Redis](https://upstash.com) database (or add it from the Vercel
-   Marketplace) and add `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`. Without
-   them, the app falls back to memory-only limits.
-4. Deploy. The generate route allows up to 300 seconds (`maxDuration`), the maximum on the
-   Hobby plan. Guides usually take 40–60 seconds.
+The code shows a "Study Guide Maker has moved" page if it's ever deployed on Vercel,
+because Vercel's servers can't reach the Mac's models.
 
 ## Classes and sources
 
@@ -180,23 +122,23 @@ each step (never student content), so you can track cost in Vercel's logs.
 
 ## Known limitations
 
-- **Tulsa *Fundamentals of Personal Finance*:** the site blocks automated downloads, so it
-  has no chapter list. The AI opens its contents page instead, which costs more.
-- **The American Yawp:** each chapter is one long page, and a fetch reads about the first
-  8,000 tokens, so later parts of a chapter can be missed.
+- **Tulsa *Fundamentals of Personal Finance*:** the site blocks automated downloads, so the
+  local team can't read it; Personal Finance uses the Coastline book and the web instead.
+- **The American Yawp:** each chapter is one long page, and the team reads about the first
+  7,000 characters, so later parts of a chapter can be missed.
 - **Copies of OpenStax text:** the app catches them on known sites and in URLs that
   mention OpenStax. Text copied onto an unrelated site without saying so can't be detected.
-- **Accuracy:** guides are AI-generated. Every page footer tells students to check
+- **Speed:** one guide at a time, about 5–8 minutes each, so busy times mean a wait.
+- **Accuracy:** guides are made by a small local model and can contain mistakes. Every page footer tells students to check
   important details with their teacher.
 
 ## Safety
 
-- No accounts, names, emails, or school IDs are collected. IP addresses are hashed before
-  being used for rate limits.
-- Input limits: 500 characters of text and 5 photos. The server checks that each photo
-  really is a JPEG or PNG.
-- Prompts tell Claude to keep content school-appropriate, decline requests that aren't
-  study topics, and treat the student's text and photos as material to study, never as
-  instructions.
-- If Claude declines a request, the API retries it on a backup model ("server-side
-  fallback").
+- No accounts, names, emails, or school IDs are collected. Visitors are counted for rate
+  limits by a hashed IP address (Cloudflare passes the real visitor address).
+- The site listens only on 127.0.0.1, so the tunnel is the only way in from outside.
+- Requests from other websites are refused; security headers block framing.
+- Input limits: 80-character subject, 500-character topic, 5 photos (checked to be real
+  JPEG/PNG). Photos are dropped as soon as their guide is made.
+- The team is told to keep content school-appropriate, decline requests that aren't study
+  topics, and treat student text and photos as material, never instructions.

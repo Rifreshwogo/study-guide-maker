@@ -5,15 +5,6 @@ import "server-only";
  * Override in .env.local.
  */
 export const LOCAL_CONFIG = {
-  /**
-   * Which AI makes guides:
-   *  - "claude" (default): Claude via the Anthropic API. Used on Vercel.
-   *  - "local": a team of local models via Ollama + local SearXNG search.
-   *    Only works when the app runs on your own Mac (npm run dev).
-   * Set AI_PROVIDER=local in .env.local to switch.
-   */
-  provider: (process.env.AI_PROVIDER === "local" ? "local" : "claude") as "claude" | "local",
-
   ollamaUrl: process.env.OLLAMA_URL ?? "http://127.0.0.1:11434",
   /**
    * Model for the whole team. Must accept images (for note photos). Use an
