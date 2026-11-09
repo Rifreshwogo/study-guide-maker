@@ -20,4 +20,11 @@ export const APP_CONFIG = {
   rateLimitPerHour: 5,
   /** Guides allowed for the whole site per day (keeps your Mac from running nonstop). */
   globalDailyLimit: 100,
+
+  /** Shown on the Privacy and Terms pages as the way to reach the site owner. Leave "" to hide. */
+  contactEmail: "rielwogo@gmail.com",
+  /** Date shown at the top of the Privacy and Terms pages. Update it when you change them. */
+  policiesUpdated: "November 9, 2026",
+  /** Youngest age that can use the site on their own. Under 13 brings extra US privacy rules (COPPA). */
+  minimumAge: 13,
 } as const;

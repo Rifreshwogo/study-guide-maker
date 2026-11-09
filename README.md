@@ -98,6 +98,14 @@ ways students might type it. Any other subject already works through web researc
 - [`lib/local/config.ts`](lib/local/config.ts): the model, context size, and how many pages
   the team reads. `.env.local` can override `LOCAL_MODEL`, `OLLAMA_URL`, `SEARXNG_URL`.
 
+## Privacy and Terms pages
+
+[`app/privacy/page.tsx`](app/privacy/page.tsx) and [`app/terms/page.tsx`](app/terms/page.tsx)
+describe what the code does today: photos dropped once the guide is made, guides kept in memory
+30 minutes, IPs hashed, no cookies or analytics. **If you change any of that** (add analytics,
+save guides, use Upstash, add a paid tier), update both pages and `policiesUpdated` in
+`app.config.ts`. Set `contactEmail` there so visitors can reach you.
+
 ## Team Office
 
 The team writes what it's doing to `~/.study-team/status.json` (steps and timing only, never

@@ -44,7 +44,7 @@ export default function Flashcards({ cards }: { cards: Card[] }) {
         <button
           type="button"
           onClick={() => setFlipped((f) => !f)}
-          aria-label={flipped ? "Showing answer. Click to see the front." : "Showing front. Click to see the answer."}
+          aria-pressed={flipped}
           className={`w-full min-h-48 rounded-xl border-2 p-6 flex flex-col items-center justify-center text-center gap-3 transition-colors ${
             flipped ? "border-accent bg-card" : "border-line bg-background hover:border-accent"
           }`}
@@ -55,7 +55,10 @@ export default function Flashcards({ cards }: { cards: Card[] }) {
           <span className={flipped ? "text-base" : "text-xl font-semibold"} aria-live="polite">
             {flipped ? card.back : card.front}
           </span>
-          <span className="text-xs text-muted">Tap to flip</span>
+          <span className="text-xs text-muted" aria-hidden>
+            Tap to flip
+          </span>
+          <span className="sr-only">Press to flip the card.</span>
         </button>
 
         <div className="flex items-center justify-between gap-2">
@@ -81,7 +84,7 @@ export default function Flashcards({ cards }: { cards: Card[] }) {
         </div>
         <div className="text-center">
           <button type="button" onClick={shuffle} className="text-sm text-accent font-medium underline-offset-2 hover:underline">
-            🔀 Shuffle deck
+            <span aria-hidden>🔀</span> Shuffle deck
           </button>
         </div>
       </div>

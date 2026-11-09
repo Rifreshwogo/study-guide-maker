@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { APP_CONFIG } from "@/app.config";
 import { SUBJECT_SUGGESTIONS } from "@/sources.config";
@@ -149,6 +150,18 @@ export default function StudyForm({ onSubmit, disabled }: Props) {
       >
         {photosBusy ? "Getting photos ready…" : "Make my study guide"}
       </button>
+      <p className="text-sm text-muted text-center">
+        For students {APP_CONFIG.minimumAge}+ (younger students: use with a parent or teacher). By
+        making a guide you agree to the{" "}
+        <Link href="/terms" className="underline underline-offset-2">
+          Terms
+        </Link>{" "}
+        and{" "}
+        <Link href="/privacy" className="underline underline-offset-2">
+          Privacy Policy
+        </Link>
+        .
+      </p>
     </form>
   );
 }
