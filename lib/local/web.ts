@@ -2,6 +2,7 @@ import "server-only";
 import { LOCAL_CONFIG } from "./config";
 import { OPENSTAX_MIRROR_DOMAINS } from "@/sources.config";
 import { isBlockedUrl, normalizeUrl } from "@/lib/sourceCheck";
+import { recordSiteCheck } from "./status";
 
 /**
  * Web access for local mode. Unlike Claude's web tools, here the server does the
@@ -47,11 +48,19 @@ const LOW_VALUE_HOSTS = [
 ];
 const isLowValue = (host: string) => LOW_VALUE_HOSTS.some((d) => host === d || host.endsWith("." + d));
 
+/** Why a page is off-limits for the local team, or null if it's fine. */
+export function blockReason(url: string): string | null {
+  if (!isPublicWebUrl(url)) return "Not a public web address";
+  const host = new URL(url).hostname.toLowerCase();
+  if (isBlockedUrl(url)) return "OpenStax or a book not approved yet";
+  if (isMirrorHost(host)) return "Copy of an OpenStax book";
+  if (isLowValue(host)) return "Video, social or homework-answer site";
+  return null;
+}
+
 /** Safe to show the local team: public, a decent source, not OpenStax, not a mirror, not a pending book. */
 export function allowedForLocal(url: string): boolean {
-  if (!isPublicWebUrl(url)) return false;
-  const host = new URL(url).hostname.toLowerCase();
-  return !isBlockedUrl(url) && !isMirrorHost(host) && !isLowValue(host);
+  return blockReason(url) === null;
 }
 
 export async function searchWeb(query: string): Promise<{ title: string; url: string; snippet: string }[]> {
@@ -61,7 +70,13 @@ export async function searchWeb(query: string): Promise<{ title: string; url: st
     if (!res.ok) return [];
     const data = (await res.json()) as { results?: { title?: string; url?: string; content?: string }[] };
     return (data.results ?? [])
-      .filter((r) => r.url && allowedForLocal(r.url))
+      .filter((r) => {
+        if (!r.url) return false;
+        // Search results that are off-limits count as blocked checks (they're never downloaded).
+        const reason = blockReason(r.url);
+        if (reason) recordSiteCheck(r.url, reason);
+        return !reason;
+      })
       .map((r) => ({ title: r.title ?? r.url!, url: r.url!, snippet: r.content ?? "" }));
   } catch {
     console.warn("local search: SearXNG unreachable");
@@ -117,7 +132,10 @@ export async function readPage(
   /** Which URLs may be read. Defaults to the web rules; textbook pages pass their own. */
   allow: (url: string) => boolean = allowedForLocal,
 ): Promise<WebPage | null> {
-  if (!isPublicWebUrl(url) || !allow(url)) return null;
+  if (!isPublicWebUrl(url) || !allow(url)) {
+    recordSiteCheck(url, isPublicWebUrl(url) ? (blockReason(url) ?? "Outside the approved textbook") : "Not a public web address");
+    return null;
+  }
   try {
     const res = await fetch(url, {
       headers: { "User-Agent": USER_AGENT, Accept: "text/html" },
@@ -126,7 +144,12 @@ export async function readPage(
       cache: "no-store",
     });
     // A redirect can land somewhere else; check the final address too.
-    if (!res.ok || (res.url && (!isPublicWebUrl(res.url) || !allow(res.url)))) return null;
+    if (res.url && res.url !== url && (!isPublicWebUrl(res.url) || !allow(res.url))) {
+      recordSiteCheck(url, "Redirected to an off-limits page");
+      return null;
+    }
+    recordSiteCheck(url, null);
+    if (!res.ok) return null;
     if (!(res.headers.get("content-type") ?? "").includes("html")) return null;
     const html = (await res.text()).slice(0, 2_000_000);
     const { title, text } = htmlToText(html);

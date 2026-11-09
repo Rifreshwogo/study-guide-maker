@@ -12,16 +12,81 @@ import { MEMBERS, type MemberId, type MemberStatus, type TeamEvent } from "./mem
  */
 
 const STATUS_FILE = process.env.TEAM_STATUS_FILE ?? path.join(os.homedir(), ".study-team", "status.json");
+/** Totals that must survive restarts: guides made and website checks. Counts and hostnames only. */
+const STATS_FILE = path.join(path.dirname(STATUS_FILE), "stats.json");
+
+/** What the website checks enforce, in plain English (see allowedForLocal and readPage in web.ts). */
+const SECURITY_RULES = [
+  "OpenStax books are blocked until you approve them",
+  "Copies of OpenStax books on other sites are blocked",
+  "Textbook pages must come from inside an approved book",
+  "Video, social media, Q&A and homework-answer sites are skipped",
+  "Only public web addresses: never this Mac, the home network or raw IP addresses",
+  "Redirects are checked again where they land",
+];
+
+export interface SiteCheck {
+  at: number;
+  site: string;
+  result: "allowed" | "blocked";
+  reason: string | null;
+}
+
+interface Stats {
+  guidesTotal: number;
+  guidesByMonth: { month: string; count: number }[];
+  checkedTotal: number;
+  blockedTotal: number;
+  recent: SiteCheck[];
+}
+
+function writeAtomic(file: string, data: string) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.tmp`;
+  fs.writeFileSync(tmp, data);
+  fs.renameSync(tmp, file); // swap in whole, so readers never see half a file
+}
+
+function loadStats(): Stats {
+  const empty: Stats = { guidesTotal: 0, guidesByMonth: [], checkedTotal: 0, blockedTotal: 0, recent: [] };
+  if (process.env.VERCEL) return empty;
+  try {
+    const d = JSON.parse(fs.readFileSync(STATS_FILE, "utf8")) as Partial<Stats>;
+    const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.floor(v) : 0);
+    return {
+      guidesTotal: n(d.guidesTotal),
+      guidesByMonth: Array.isArray(d.guidesByMonth) ? d.guidesByMonth.slice(0, 12) : [],
+      checkedTotal: n(d.checkedTotal),
+      blockedTotal: n(d.blockedTotal),
+      recent: Array.isArray(d.recent) ? d.recent.slice(0, 20) : [],
+    };
+  } catch {
+    return empty;
+  }
+}
+
+function saveStats() {
+  if (process.env.VERCEL) return;
+  try {
+    writeAtomic(STATS_FILE, JSON.stringify(store().stats));
+  } catch {
+    // Optional; never break guide generation.
+  }
+}
 
 function save() {
   if (process.env.VERCEL) return;
   try {
     const s = store();
-    const data = JSON.stringify({ updatedAt: Date.now(), ...snapshot(), events: s.events });
-    fs.mkdirSync(path.dirname(STATUS_FILE), { recursive: true });
-    const tmp = `${STATUS_FILE}.tmp`;
-    fs.writeFileSync(tmp, data);
-    fs.renameSync(tmp, STATUS_FILE); // swap in whole, so the office never reads half a file
+    const { guidesTotal, guidesByMonth, checkedTotal, blockedTotal, recent } = s.stats;
+    const data = JSON.stringify({
+      updatedAt: Date.now(),
+      ...snapshot(),
+      events: s.events,
+      stats: { guidesTotal, guidesByMonth },
+      security: { checkedTotal, blockedTotal, rules: SECURITY_RULES, recent },
+    });
+    writeAtomic(STATUS_FILE, data);
   } catch {
     // The office is optional; never let it break guide generation.
   }
@@ -31,6 +96,7 @@ interface Store {
   members: Record<MemberId, MemberStatus>;
   events: TeamEvent[];
   guide: { className: string; startedAt: number } | null;
+  stats: Stats;
 }
 
 const g = globalThis as unknown as { __studyTeamStatus?: Store };
@@ -42,6 +108,7 @@ function store(): Store {
     ) as Record<MemberId, MemberStatus>,
     events: [],
     guide: null,
+    stats: loadStats(),
   };
   return g.__studyTeamStatus;
 }
@@ -84,6 +151,7 @@ export function guideEnded(ok: boolean, note?: string) {
   const seconds = s.guide ? Math.round((Date.now() - s.guide.startedAt) / 1000) : null;
   addEvent("team", `${ok ? "Guide finished" : "Guide stopped"}${note ? `: ${note}` : ""}${seconds !== null ? ` (${formatSeconds(seconds)})` : ""}`);
   s.guide = null;
+  if (ok) countGuide(s.stats);
   // If something failed mid-step, don't leave anyone stuck as "working".
   for (const m of Object.values(s.members)) {
     if (m.state === "working") {
@@ -92,6 +160,39 @@ export function guideEnded(ok: boolean, note?: string) {
       m.since = null;
     }
   }
+  save();
+  if (ok) saveStats();
+}
+
+/** Month in the Mac's local time, like "2026-11". */
+function localMonth(d = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function countGuide(stats: Stats) {
+  stats.guidesTotal += 1;
+  const month = localMonth();
+  const row = stats.guidesByMonth.find((r) => r.month === month);
+  if (row) row.count += 1;
+  else stats.guidesByMonth.push({ month, count: 1 });
+  stats.guidesByMonth.sort((a, b) => b.month.localeCompare(a.month));
+  stats.guidesByMonth.length = Math.min(stats.guidesByMonth.length, 12);
+}
+
+/** Records one website check (hostname only, never the full address). */
+export function recordSiteCheck(url: string, blockReason: string | null) {
+  let site = "unknown";
+  try {
+    site = new URL(url).hostname.toLowerCase();
+  } catch {
+    // keep "unknown"
+  }
+  const stats = store().stats;
+  stats.checkedTotal += 1;
+  if (blockReason) stats.blockedTotal += 1;
+  stats.recent.unshift({ at: Date.now(), site, result: blockReason ? "blocked" : "allowed", reason: blockReason });
+  stats.recent.length = Math.min(stats.recent.length, 20);
+  saveStats();
   save();
 }
 
